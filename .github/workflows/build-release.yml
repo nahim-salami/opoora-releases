@@ -14,6 +14,13 @@
 #
 # Prérequis : secret `CODE_TOKEN` dans CE dépôt — fine-grained PAT limité au
 # dépôt privé Opoora, permission « Contents: Read » UNIQUEMENT (lecture seule).
+#
+# Les journaux de ce dépôt sont PUBLICS : la sortie des builds est masquée ; en cas
+# d'échec, seules les positions fichier:ligne des erreurs sont affichées.
+#
+# App Client : deux APK — l'app reliée à l'API réelle, et une version de démonstration
+# (--dart-define=OPOORA_DEMO=true : aucun compte ni paiement réel, code 482913).
+# Une version avec un tiret (ex. v0.1.0-beta.1) est publiée en pré-version.
 
 name: Build & release des apps
 
@@ -51,6 +58,7 @@ jobs:
           repository: ${{ github.repository_owner }}/Opoora
           token: ${{ secrets.CODE_TOKEN }}
           ref: ${{ env.VERSION }}
+          persist-credentials: false
 
       # Tant que la Phase 0 n'a pas créé apps/<app>, on saute proprement.
       - name: Vérifier que l'app existe
@@ -70,15 +78,27 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Construire l'APK
+      - name: Construire l'APK (sortie masquée)
         if: steps.check.outputs.exists == 'true'
         working-directory: apps/${{ matrix.app }}
         run: |
-          flutter pub get
-          flutter build apk --release
+          flutter pub get > /dev/null
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          mv build/app/outputs/flutter-apk/app-release.apk \
-             "$GITHUB_WORKSPACE/dist/opoora-${{ matrix.app }}-$VERSION.apk"
+          build() { # $1 = suffixe du nom de fichier, puis options de flutter build
+            local suffix="$1"; shift
+            if ! flutter build apk --release "$@" > /tmp/build.log 2>&1; then
+              echo "::error::Build APK en échec — détails masqués (dépôt public). Positions :"
+              grep -oE "[A-Za-z0-9_./-]+\.(dart|kts|gradle|xml|kt):[0-9]+(:[0-9]+)?" /tmp/build.log | sort -u | head -30
+              grep -E "What went wrong|^> " /tmp/build.log | head -10
+              exit 1
+            fi
+            mv build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/dist/opoora-${{ matrix.app }}${suffix}-$VERSION.apk"
+            echo "APK ${{ matrix.app }}${suffix} OK."
+          }
+          build ""
+          if [ "${{ matrix.app }}" = "client" ]; then
+            build "-demo" --dart-define=OPOORA_DEMO=true
+          fi
 
       - name: Déposer l'artefact
         if: steps.check.outputs.exists == 'true'
@@ -109,8 +129,13 @@ jobs:
             echo "::warning::Aucun APK construit — rien à publier (normal avant la Phase 0)."
             exit 0
           fi
-          gh release create "$VERSION" \
-            --repo "${{ github.repository }}" \
-            --title "Opoora $VERSION" \
-            --notes "Applications Opoora $VERSION — Client, Livreur et Business (APK Android)." \
-            "${APKS[@]}"
+          PRE=""
+          case "$VERSION" in *-*) PRE="--prerelease" ;; esac
+          cat > /tmp/notes.md <<EOF
+          Applications Opoora $VERSION (APK Android).
+
+          - opoora-client : app Client reliée à l'API réelle (paiements FedaPay réels).
+          - opoora-client-demo : app Client en démonstration, sans compte ni paiement réel (code de connexion 482913).
+          - opoora-courier, opoora-business : apps Livreur et Business (en construction).
+          EOF
+          gh release create "$VERSION" $PRE --repo "${{ github.repository }}" --title "Opoora $VERSION" --notes-file /tmp/notes.md "${APKS[@]}"
