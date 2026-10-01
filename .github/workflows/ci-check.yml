@@ -106,11 +106,13 @@ jobs:
           channel: stable
           cache: true
 
+      # Aperçu en mode démonstration (FakeBackend) : aucun compte ni paiement réel,
+      # les écrans se parcourent avec le code de démonstration.
       - name: Construire (sortie masquée)
         working-directory: apps/client
         run: |
           flutter pub get > /dev/null
-          if ! flutter build web --release --no-source-maps > /tmp/build.log 2>&1; then
+          if ! flutter build web --release --no-source-maps --dart-define=OPOORA_DEMO=true > /tmp/build.log 2>&1; then
             echo "::error::Build web en échec — détails masqués (dépôt public). Positions :"
             grep -oE "[A-Za-z0-9_./-]+\.dart:[0-9]+:[0-9]+" /tmp/build.log | sort -u | head -30
             exit 1
