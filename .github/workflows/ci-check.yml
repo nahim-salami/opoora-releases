@@ -110,7 +110,7 @@ jobs:
       - name: Typage et tests (Postgres PGlite, migrations appliquées)
         working-directory: backend
         run: |
-          npm ci --no-audit --no-fund > /dev/null
+          npm ci --no-audit --no-fund --loglevel=error
           if ! npx tsc --noEmit -p . > /tmp/tsc.log 2>&1; then
             echo "::error::Typage en échec — détails masqués. Positions :"
             grep -oE "^[A-Za-z0-9_./\[\]-]+\.tsx?\([0-9]+,[0-9]+\)" /tmp/tsc.log | sort -u | head -30
