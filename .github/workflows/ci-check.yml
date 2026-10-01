@@ -131,7 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [client, courier]
+        app: [client, courier, business]
     steps:
       - name: Récupérer le code privé (éphémère, jamais publié)
         uses: actions/checkout@v4
