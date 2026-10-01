@@ -18,8 +18,6 @@
 # Les journaux de ce dépôt sont PUBLICS : la sortie des builds est masquée ; en cas
 # d'échec, seules les positions fichier:ligne des erreurs sont affichées.
 #
-# App Client : deux APK — l'app reliée à l'API réelle, et une version de démonstration
-# (--dart-define=OPOORA_DEMO=true : aucun compte ni paiement réel, code 482913).
 # Une version avec un tiret (ex. v0.1.0-beta.1) est publiée en pré-version.
 
 name: Build & release des apps
@@ -84,21 +82,14 @@ jobs:
         run: |
           flutter pub get > /dev/null
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          build() { # $1 = suffixe du nom de fichier, puis options de flutter build
-            local suffix="$1"; shift
-            if ! flutter build apk --release "$@" > /tmp/build.log 2>&1; then
-              echo "::error::Build APK en échec — détails masqués (dépôt public). Positions :"
-              grep -oE "[A-Za-z0-9_./-]+\.(dart|kts|gradle|xml|kt):[0-9]+(:[0-9]+)?" /tmp/build.log | sort -u | head -30
-              grep -E "What went wrong|^> " /tmp/build.log | head -10
-              exit 1
-            fi
-            mv build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/dist/opoora-${{ matrix.app }}${suffix}-$VERSION.apk"
-            echo "APK ${{ matrix.app }}${suffix} OK."
-          }
-          build ""
-          if [ "${{ matrix.app }}" = "client" ]; then
-            build "-demo" --dart-define=OPOORA_DEMO=true
+          if ! flutter build apk --release > /tmp/build.log 2>&1; then
+            echo "::error::Build APK en échec — détails masqués (dépôt public). Positions :"
+            grep -oE "[A-Za-z0-9_./-]+\.(dart|kts|gradle|xml|kt):[0-9]+(:[0-9]+)?" /tmp/build.log | sort -u | head -30
+            grep -E "What went wrong|^> " /tmp/build.log | head -10
+            exit 1
           fi
+          mv build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/dist/opoora-${{ matrix.app }}-$VERSION.apk"
+          echo "APK ${{ matrix.app }} OK."
 
       - name: Déposer l'artefact
         if: steps.check.outputs.exists == 'true'
@@ -134,8 +125,7 @@ jobs:
           cat > /tmp/notes.md <<EOF
           Applications Opoora $VERSION (APK Android).
 
-          - opoora-client : app Client reliée à l'API réelle (paiements FedaPay réels).
-          - opoora-client-demo : app Client en démonstration, sans compte ni paiement réel (code de connexion 482913).
+          - opoora-client : app Client (API réelle, paiements FedaPay réels).
           - opoora-courier, opoora-business : apps Livreur et Business (en construction).
           EOF
           gh release create "$VERSION" $PRE --repo "${{ github.repository }}" --title "Opoora $VERSION" --notes-file /tmp/notes.md "${APKS[@]}"
