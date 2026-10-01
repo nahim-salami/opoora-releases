@@ -87,6 +87,43 @@ jobs:
           done
           exit $status
 
+  backend:
+    name: API (typage et tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code privé (éphémère, jamais publié)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Opoora
+          token: ${{ secrets.CODE_TOKEN }}
+          ref: ${{ env.REF }}
+          persist-credentials: false
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # Sorties masquées (dépôt public) : seulement les positions, noms de tests et bilans.
+      - name: Typage et tests (Postgres PGlite, migrations appliquées)
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund > /dev/null
+          if ! npx tsc --noEmit -p . > /tmp/tsc.log 2>&1; then
+            echo "::error::Typage en échec — détails masqués. Positions :"
+            grep -oE "^[A-Za-z0-9_./\[\]-]+\.tsx?\([0-9]+,[0-9]+\)" /tmp/tsc.log | sort -u | head -30
+            exit 1
+          fi
+          if ! npm test > /tmp/test.log 2>&1; then
+            echo "::error::Tests en échec — détails masqués. Tests concernés :"
+            grep -E "^\s*✖" /tmp/test.log | head -30
+            grep -E "^ℹ (tests|pass|fail)" /tmp/test.log
+            exit 1
+          fi
+          grep -E "^ℹ (tests|pass|fail)" /tmp/test.log
+
   web:
     name: Build web de l'app Client
     needs: check
