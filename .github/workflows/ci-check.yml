@@ -1,0 +1,125 @@
+# ⚠️ Ce fichier vit dans le dépôt PUBLIC opoora-releases
+#    (.github/workflows/ci-check.yml). La copie ici, dans le dépôt privé, est la
+#    source de vérité — la reporter là-bas à chaque modification.
+#
+# Vérifie une branche du dépôt PRIVÉ pendant le développement : analyse statique,
+# tests, et build web de l'app Client (aperçu des écrans). Le code est récupéré
+# dans la machine éphémère du runner, jamais commité ni publié ici.
+#
+# Les journaux de ce dépôt sont PUBLICS : aucune étape n'affiche de code source.
+#   - `flutter analyze` : chemin:ligne + message (pas d'extrait de code) ;
+#   - un build en échec n'affiche que les positions fichier:ligne des erreurs.
+#
+# Déclenchement : repository_dispatch `check` (client_payload.ref = branche ou
+# commit du privé) ou manuellement (Actions → Vérification → Run workflow).
+
+name: Vérification (analyse, tests, build web)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branche ou commit du dépôt privé"
+        required: true
+        default: main
+  repository_dispatch:
+    types: [check]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.client_payload.ref }}
+  cancel-in-progress: true
+
+env:
+  REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.client_payload.ref }}
+
+jobs:
+  check:
+    name: Analyse et tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code privé (éphémère, jamais publié)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Opoora
+          token: ${{ secrets.CODE_TOKEN }}
+          ref: ${{ env.REF }}
+          persist-credentials: false
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Version
+        run: flutter --version
+
+      - name: Dépendances
+        run: |
+          for d in packages/opoora_core packages/opoora_ui apps/client apps/courier apps/business; do
+            echo "::group::pub get $d"
+            (cd "$d" && flutter pub get) || exit 1
+            echo "::endgroup::"
+          done
+
+      - name: Analyse statique
+        run: |
+          status=0
+          for d in packages/opoora_core packages/opoora_ui apps/client apps/courier apps/business; do
+            echo "::group::analyze $d"
+            (cd "$d" && flutter analyze --no-pub --no-fatal-infos) || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Tests
+        run: |
+          status=0
+          for d in packages/opoora_core packages/opoora_ui apps/client apps/courier apps/business; do
+            if [ -d "$d/test" ]; then
+              echo "::group::test $d"
+              (cd "$d" && flutter test --no-pub --reporter expanded) || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
+  web:
+    name: Build web de l'app Client
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code privé (éphémère, jamais publié)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Opoora
+          token: ${{ secrets.CODE_TOKEN }}
+          ref: ${{ env.REF }}
+          persist-credentials: false
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Construire (sortie masquée)
+        working-directory: apps/client
+        run: |
+          flutter pub get > /dev/null
+          if ! flutter build web --release --no-source-maps > /tmp/build.log 2>&1; then
+            echo "::error::Build web en échec — détails masqués (dépôt public). Positions :"
+            grep -oE "[A-Za-z0-9_./-]+\.dart:[0-9]+:[0-9]+" /tmp/build.log | sort -u | head -30
+            exit 1
+          fi
+          echo "Build web OK."
+
+      - name: Déposer l'aperçu web
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-client
+          path: apps/client/build/web
+          retention-days: 3
