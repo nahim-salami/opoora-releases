@@ -88,7 +88,7 @@ jobs:
           exit $status
 
   backend:
-    name: API (typage et tests)
+    name: API (typage, tests, build du site)
     runs-on: ubuntu-latest
     steps:
       - name: Récupérer le code privé (éphémère, jamais publié)
@@ -123,6 +123,14 @@ jobs:
             exit 1
           fi
           grep -E "^ℹ (tests|pass|fail)" /tmp/test.log
+          # build du site (sans base : la grille par défaut sert aux pages statiques)
+          if ! NEXT_TELEMETRY_DISABLED=1 npx next build > /tmp/next.log 2>&1; then
+            echo "::error::Build du site en échec — détails masqués. Positions :"
+            grep -oE "[A-Za-z0-9_./\[\]-]+\.tsx?:[0-9]+:[0-9]+" /tmp/next.log | sort -u | head -30
+            grep -oE "Error occurred prerendering page \"[^\"]+\"" /tmp/next.log | sort -u | head -10
+            exit 1
+          fi
+          echo "Build du site OK."
 
   web:
     name: Build web (${{ matrix.app }})
