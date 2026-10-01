@@ -125,9 +125,13 @@ jobs:
           grep -E "^ℹ (tests|pass|fail)" /tmp/test.log
 
   web:
-    name: Build web de l'app Client
+    name: Build web (${{ matrix.app }})
     needs: check
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [client, courier]
     steps:
       - name: Récupérer le code privé (éphémère, jamais publié)
         uses: actions/checkout@v4
@@ -143,10 +147,10 @@ jobs:
           channel: stable
           cache: true
 
-      # Aperçu en mode démonstration (FakeBackend) : aucun compte ni paiement réel,
-      # les écrans se parcourent avec le code de démonstration.
+      # Aperçu en mode démonstration (FakeBackend / FakeCourierBackend) : aucun compte,
+      # paiement ni course réels ; les écrans se parcourent avec le code de démonstration.
       - name: Construire (sortie masquée)
-        working-directory: apps/client
+        working-directory: apps/${{ matrix.app }}
         run: |
           flutter pub get > /dev/null
           if ! flutter build web --release --no-source-maps --dart-define=OPOORA_DEMO=true > /tmp/build.log 2>&1; then
@@ -159,6 +163,6 @@ jobs:
       - name: Déposer l'aperçu web
         uses: actions/upload-artifact@v4
         with:
-          name: web-client
-          path: apps/client/build/web
+          name: web-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/build/web
           retention-days: 3
